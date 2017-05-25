@@ -21,7 +21,8 @@ data {
 
 parameters {
   # baseline firing rates
-  vector[U] b;
+  vector<lower=0>[U] b;
+  vector<lower=0>[U] phi;  # overdispersion parameter
 
   # log firing rate matrix factors
   matrix<lower=0>[S, K] W_raw;  # stimulus feature loading matrix
@@ -42,11 +43,10 @@ transformed parameters {
   vector<lower=0>[K] tau_V;
 
   matrix<lower=0>[S, K] W;  # stimulus feature loading matrix
-  // matrix<lower=0>[S, K] W_normed;  # stimulus feature loading matrix
   matrix[U, K] V;  # neuron response matrix
 
   # log firing rates
-  matrix[S, U] eta;
+  matrix[S, U] lambda0;
   matrix[S, U] lambda;
 
   tau_W = exp(cumulative_sum(log(delta_W)));
@@ -57,21 +57,17 @@ transformed parameters {
     V[:, k] = V_raw[:, k] ./ (tau_V[k] * phi_V[:, k]);
   }
 
-  // for (k in 1:K) {
-  //   W_normed[:, k] = W[:, k]/sum(W[:, k]);
-  // }
-
-  // eta = W_normed * V';
-  eta = W * V';
   for (s in 1:S) {
     for (u in 1:U) {
-      lambda[s, u] = b[u] + eta[s, u];
+      lambda0[s, u] = b[u];
     }
   }
+  lambda = lambda0 .* exp(W * V');
 }
 
 model {
-  b ~ normal(-1, 1);
+  b ~ gamma(3/2, 3/2);
+  phi ~ gamma(3/2, 3/2);
 
   for (k in 1:K) {
     delta_W[k] ~ gamma(5, 1.);
@@ -87,7 +83,7 @@ model {
   }
 
   for (i in 1:N) {
-    count[i] ~ poisson_log(lambda[stim[i], unit[i]] + log(Tpost));
-    baseline[i] ~ poisson_log(b[unit[i]] + log(Tpre));
+    count[i] ~ neg_binomial_2(lambda[stim[i], unit[i]] * Tpost, phi[unit[i]]);
+    baseline[i] ~ neg_binomial(lambda0[stim[i], unit[i]] * Tpre, phi[unit[i]]);
   }
 }
